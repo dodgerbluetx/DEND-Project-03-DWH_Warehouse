@@ -3,9 +3,22 @@ import boto3
 import json
 import time
 import configparser
+import argparse
+import datetime
 
 
 def prettyRedshiftProps(props):
+    """
+    Description:
+      Retrieves the clsuter properties and formats them for display
+
+    Parameters:
+      props - feed the cluster identified to the api
+
+    Returns:
+      none
+    """
+
     pd.set_option('display.max_colwidth', -1)
     keysToShow = [
         "ClusterIdentifier", "NodeType", "ClusterStatus", "MasterUsername",
@@ -19,6 +32,35 @@ def create_cluster(
     KEY, SECRET, CLUSTER_TYPE, NUM_NODES, NODE_TYPE, CLUSTER_IDENTIFIER,
     DB, DB_USER, DB_PASSWORD, PORT, IAM_ROLE_NAME, ec2, iam, redshift
 ):
+    """
+    Description:
+     Configures a new AWS redshift cluster, using parameters found in dwh.cfg
+
+     First, a new IAM role will be built to allow redshift to access other
+     services.  Then, grant S3 read only access to the role.  Next, build the
+     cluster and wait for it to available.  Finally, allow access to the cluster
+     from all sources (can be changed to restrict access)
+
+    Parameters:
+      KEY - remote access key
+      SECRET - remote access secret
+      CLUSTER_TYPE - single-node or multi-node
+      NUM_NODES - number of nodes to build into cluster
+      NODE_TYPE - which redshift configuration (dc2.large, etc)
+      CLUSTER_IDENTIFIER - prefix for cluster name
+      DB - name for database
+      DB_USER - user to build for db access
+      DB_PASSWORD - password for db access
+      PORT - port to access db
+      IAM_ROLE_NAME - prefix for iam role name
+      ec2 - AWS boto3 EC2 connection object
+      iam - AWS boto3 IAM connection object
+      redshift - AWS boto3 Redshift connection object
+
+    Returns:
+      N/A
+    """
+
     # create the role
     try:
         print("Creating a new IAM Role...")
@@ -83,13 +125,15 @@ def create_cluster(
         time.sleep(5)
     else:
         print("Cluster is up and running!")
+        print()
         print("Address: {}".format(myClusterProps['Endpoint']['Address']))
         print()
 
     ENDPOINT = myClusterProps['Endpoint']['Address']
     ROLE_ARN = myClusterProps['IamRoles'][0]['IamRoleArn']
     print("ENDPOINT :: ", ENDPOINT)
-    print("_ROLE_ARN :: ", ROLE_ARN)
+    print("ROLE_ARN :: ", ROLE_ARN)
+    print()
 
     # test tcp connection into cluster
     try:
@@ -113,32 +157,85 @@ def delete_cluster(
     DB, DB_USER, DB_PASSWORD, PORT, IAM_ROLE_NAME, ec2, iam, redshift
 ):
 
-    redshift.delete_cluster(
-        ClusterIdentifier=CLUSTER_IDENTIFIER, SkipFinalClusterSnapshot=True
-    )
+    """
+    Description:
+      Removes an existing Redshift cluster, using parameters found in dwh.cfg
 
-    myClusterProps = redshift.describe_clusters(
-        ClusterIdentifier=CLUSTER_IDENTIFIER
-    )['Clusters'][0]
+      First, the cluster will be shut down. Then the role policy will be detached
+      from the role, then finally the role will be deleted.
 
-    while myClusterProps['ClusterStatus'] == 'deleting':
+    Parameters:
+       KEY - remote access key
+       SECRET - remote access secret
+       CLUSTER_TYPE - single-node or multi-node
+       NUM_NODES - number of nodes to build into cluster
+       NODE_TYPE - which redshift configuration (dc2.large, etc)
+       CLUSTER_IDENTIFIER - prefix for cluster name
+       DB - name for database
+       DB_USER - user to build for db access
+       DB_PASSWORD - password for db access
+       PORT - port to access db
+       IAM_ROLE_NAME - prefix for iam role name
+       ec2 - AWS boto3 EC2 connection object
+       iam - AWS boto3 IAM connection object
+       redshift - AWS boto3 Redshift connection object
+
+    Returns:
+      N/A
+    """
+
+    try:
+        redshift.delete_cluster(
+            ClusterIdentifier=CLUSTER_IDENTIFIER, SkipFinalClusterSnapshot=True
+        )
+    except Exception as e:
+        print('Cluster does not exist or is already gone: {}'.format(e))
+        return
+
+    x = 1
+    while x == 1:
         print("Waiting for cluster to go away...")
         print()
-        myClusterProps = redshift.describe_clusters(
-            ClusterIdentifier=CLUSTER_IDENTIFIER
-        )['Clusters'][0]
-        print(prettyRedshiftProps(myClusterProps))
-        print()
+        try:
+            myClusterProps = redshift.describe_clusters(
+                ClusterIdentifier=CLUSTER_IDENTIFIER
+            )
+        except Exception as e:
+            print('Cluster does not exist or is already gone: {}'.format(e))
+            return
         time.sleep(5)
-    else:
-        print("Cluster is gone!")
-        print()
 
-    iam.detach_role_policy(
-        RoleName=IAM_ROLE_NAME,
-        PolicyArn="arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
-    )
-    iam.delete_role(RoleName=IAM_ROLE_NAME)
+#    if 'Cluster dwhcluster not found' in e:
+#        print('Cluster does not exists or is already gone!')
+
+
+
+#    while myClusterProps['ClusterStatus'] == 'deleting':
+#        print("Waiting for cluster to go away...")
+#        print()
+
+#    try:
+#        myClusterProps = redshift.describe_clusters(
+#            ClusterIdentifier=CLUSTER_IDENTIFIER
+#        )['Clusters'][0]
+#        print(prettyRedshiftProps(myClusterProps))
+#        print()
+#    except Exception as e:
+#        print(e)
+#        myClusterProps['ClusterStatus'] == 'deleted'
+
+#    print(myClusterProps['ClusterStatus'])
+
+#        time.sleep(5)
+#    else:
+#        print("Cluster is gone!")
+#        print()
+
+    #iam.detach_role_policy(
+    #    RoleName=IAM_ROLE_NAME,
+    #    PolicyArn="arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+    #)
+    #iam.delete_role(RoleName=IAM_ROLE_NAME)
 
 
 def main():
@@ -189,21 +286,49 @@ def main():
         aws_secret_access_key=SECRET
     )
 
-    create_cluster(
-        KEY, SECRET, CLUSTER_TYPE, NUM_NODES, NODE_TYPE, CLUSTER_IDENTIFIER,
-        DB, DB_USER, DB_PASSWORD, PORT, IAM_ROLE_NAME, ec2, iam, redshift
-    )
+    # Creates Argument Parser object named parser
+    parser = argparse.ArgumentParser()
 
-    delete_cluster(
-        KEY, SECRET, CLUSTER_TYPE, NUM_NODES, NODE_TYPE, CLUSTER_IDENTIFIER,
-        DB, DB_USER, DB_PASSWORD, PORT, IAM_ROLE_NAME, ec2, iam, redshift
-    )
+    # Argument 1: that's a path to a folder
+    parser.add_argument('--mode', type = str, help = 'create_cluster/delete_cluster')
+
+    # Assigns variable in_args to parse_args()
+    args = parser.parse_args()
+
+    if args.mode == 'create_cluster':
+        print('Building new cluster!')
+        print()
+        create_cluster(
+            KEY, SECRET, CLUSTER_TYPE, NUM_NODES, NODE_TYPE, CLUSTER_IDENTIFIER,
+            DB, DB_USER, DB_PASSWORD, PORT, IAM_ROLE_NAME, ec2, iam, redshift
+        )
+    elif args.mode == 'delete_cluster':
+        print('Shutting down cluster!')
+        print()
+        delete_cluster(
+            KEY, SECRET, CLUSTER_TYPE, NUM_NODES, NODE_TYPE, CLUSTER_IDENTIFIER,
+            DB, DB_USER, DB_PASSWORD, PORT, IAM_ROLE_NAME, ec2, iam, redshift
+        )
+    else:
+        print('No mode defined, exiting!')
+        print()
 
 
 if __name__ == "__main__":
-    start = time.time()
-    main()
-    end = time.time()
+    start = datetime.datetime.now()
+    start_dt = start.strftime("%Y-%m-%d %H:%M:%S")
+
     print()
-    print("Execution Time: {}".format(end - start))
+    print('Starting AWS Builder script at {}'.format(start_dt))
+    print()
+
+    main()
+
+    end = datetime.datetime.now()
+    end_dt = end.strftime("%Y-%m-%d %H:%M:%S")
+
+    print()
+    print('AWS Builder script complete at {}'.format(end_dt))
+    print()
+    print("Total execution time: {}".format(end - start))
     print()

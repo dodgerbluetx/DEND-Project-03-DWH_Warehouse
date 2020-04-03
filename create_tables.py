@@ -2,21 +2,45 @@ import configparser
 import psycopg2
 from sql_queries import create_table_queries, drop_table_queries
 import time
+import datetime
 
-start = time.time()
-print("Setting up the DB...")
-print()
 
 def drop_tables(cur, conn):
+    """
+    Description:
+      Drops all existing tables from the database.  Use the sql_queries script
+      to loop through each query defined in the drop_table_queries list.
+
+    Parameters:
+      cur - the db connection cursor
+      conn - the db connection object
+
+    Returns:
+      none
+    """
     for query in drop_table_queries:
-        #print("Dropping tables... ({})".format(query))
+        print("Dropping tables...")
+        print()
         cur.execute(query)
         conn.commit()
 
 
 def create_tables(cur, conn):
+    """
+    Description:
+      Creates required new tables.  Use the sql_queries script
+      to loop through each query defined in the create_table_queries list.
+
+    Parameters:
+      cur - the db connection cursor
+      conn - the db connection object
+
+    Returns:
+      none
+    """
     for query in create_table_queries:
-        #print("Creating tables... ({})".format(query))
+        print("Creating tables...")
+        print()
         cur.execute(query)
         conn.commit()
 
@@ -29,14 +53,26 @@ def main():
     cur = conn.cursor()
 
     drop_tables(cur, conn)
-    #print()
     create_tables(cur, conn)
-    #print()
 
     conn.close()
 
 
 if __name__ == "__main__":
+    start = datetime.datetime.now()
+    start_dt = start.strftime("%Y-%m-%d %H:%M:%S")
+
+    print()
+    print('Starting the table creation script at {}'.format(start_dt))
+    print()
+
     main()
-    end = time.time()
-    print("Execution Time: {}".format(end - start))
+
+    end = datetime.datetime.now()
+    end_dt = end.strftime("%Y-%m-%d %H:%M:%S")
+
+    print()
+    print('Table creation script complete at {}'.format(end_dt))
+    print()
+    print("Total execution time: {}".format(end - start))
+    print()
