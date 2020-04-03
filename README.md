@@ -75,7 +75,8 @@ Execute the following scripts in this order to fully retrieve and load data.
    the cluster is fully built.
 
 2. `create_tables.py` - This script will drop all tables is already existing,
-   and then create the following tables:
+   and then create the following tables using queries found in the sql_queries.py
+   script.
 
    * `staging_events` - staging table for event data
    * `staging_songs` - staging table for song data
